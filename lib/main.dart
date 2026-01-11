@@ -55,7 +55,6 @@ class _ControlScreenState extends State<ControlScreen> {
   @override
   void initState() {
     super.initState();
-    _loadSettings();
     _tcpClient = TCPClient();
     _tcpClient.onConnectionStatusChanged = (status) {
       setState(() {
@@ -72,17 +71,25 @@ class _ControlScreenState extends State<ControlScreen> {
         );
       }
     };
+    // Load settings asynchronously without blocking UI
+    _loadSettingsAsync();
   }
 
-  Future<void> _loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _ip = prefs.getString('tcp_ip') ?? '192.168.1.100';
-      _port = prefs.getInt('tcp_port') ?? 8080;
+  void _loadSettingsAsync() {
+    SharedPreferences.getInstance().then((prefs) {
+      final ip = prefs.getString('tcp_ip') ?? '192.168.1.100';
+      final port = prefs.getInt('tcp_port') ?? 8080;
+      
+      if (mounted) {
+        setState(() {
+          _ip = ip;
+          _port = port;
+        });
+        _tcpClient.updateIP(ip);
+        _tcpClient.updatePort(port);
+        _tcpClient.connect();
+      }
     });
-    _tcpClient.updateIP(_ip);
-    _tcpClient.updatePort(_port);
-    _tcpClient.connect();
   }
 
   void _onSettingsChanged(String ip, int port) {
