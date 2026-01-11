@@ -1,4 +1,4 @@
-# Covolv Controller
+# Vehicle Controller
 
 A professional Flutter mobile application for vehicle control with real-time TCP communication. The app provides intuitive controls for steering, acceleration, braking, and vehicle systems, designed for landscape-only operation.
 
@@ -45,7 +45,7 @@ A professional Flutter mobile application for vehicle control with real-time TCP
 1. **Clone the repository** (if applicable):
    ```bash
    git clone <repository-url>
-   cd flutter_application_1
+   cd vehicle_controller
    ```
 
 2. **Install Flutter dependencies**:
@@ -76,9 +76,9 @@ A professional Flutter mobile application for vehicle control with real-time TCP
 
 2. **Start the Dashboard** (optional but recommended):
    ```bash
-   python dashboard.py --host 0.0.0.0 --port 8080
+   python scripts/dashboard.py --host 0.0.0.0 --port 8080
    ```
-   See [README_DASHBOARD.md](README_DASHBOARD.md) for dashboard details.
+   See [scripts/README_DASHBOARD.md](scripts/README_DASHBOARD.md) for detailed dashboard documentation.
 
 ### Network Setup
 
@@ -151,9 +151,11 @@ lib/
 
 assets/
 └── icons/
-    └── covolv.png        # App logo
+    └── vehicle_controller_logo.png        # App logo
 
-dashboard.py              # Python dashboard for monitoring (optional)
+scripts/
+  ├── dashboard.py        # Python dashboard for monitoring (optional)
+  └── generate_logo.py    # Logo generation script
 ```
 
 ### Key Components

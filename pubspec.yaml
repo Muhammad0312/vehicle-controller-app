@@ -1,5 +1,5 @@
-name: flutter_application_1
-description: "covolv controller - Vehicle control app"
+name: vehicle_controller
+description: "Vehicle Controller - Vehicle control app"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -92,7 +92,7 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/icons/covolv.png"
+  image_path: "assets/icons/vehicle_controller_logo.png"
   adaptive_icon_background: "#01252c"
-  adaptive_icon_foreground: "assets/icons/covolv.png"
+  adaptive_icon_foreground: "assets/icons/vehicle_controller_logo.png"
   adaptive_icon_padding: "20%"
