@@ -230,18 +230,6 @@ flutter analyze
 - `shared_preferences: ^2.2.2`: Persistent settings storage
 - `flutter_launcher_icons: ^0.13.1`: App icon generation (dev dependency)
 
-## License
-
-[Add your license here]
-
-## Contributing
-
-[Add contribution guidelines here]
-
-## Support
-
-For issues, questions, or feature requests, please [open an issue](link-to-issues) or contact [your contact info].
-
 ---
 
 **Note**: This app is designed for vehicle control systems. Ensure proper safety measures and testing before use in real-world scenarios.
