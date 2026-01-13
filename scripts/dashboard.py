@@ -2,6 +2,7 @@
 """
 Vehicle Control Dashboard
 Receives TCP data from Flutter app and displays it in a nice terminal dashboard
+Supports generic ControllerState format: {'type': 'id', 'axes': [...], 'buttons': [...]}
 """
 
 import socket
@@ -18,18 +19,15 @@ from rich.table import Table
 from rich import box
 
 class VehicleDashboard:
-    def __init__(self, host='0.0.0.0', port=8080):
+    def __init__(self, host='0.0.0.0', port=5000):
         self.host = host
         self.port = port
         self.console = Console()
+        # Default empty state
         self.data = {
-            'steering': {'x': 0.0, 'y': 0.0},
-            'gas': 0.0,
-            'brake': 0.0,
-            'gear': 'P',
-            'autoMode': False,
-            'leftBlinker': False,
-            'rightBlinker': False,
+            'type': 'unknown',
+            'axes': [],
+            'buttons': [],
             'timestamp': 0,
         }
         self.connected = False
@@ -38,6 +36,52 @@ class VehicleDashboard:
         self.client_socket = None
         self.running = True
         
+    def get_semantic_data(self):
+        """Extract semantic meaning based on controller type"""
+        ctype = self.data.get('type', 'unknown')
+        axes = self.data.get('axes', [])
+        buttons = self.data.get('buttons', [])
+        
+        semantic = {
+            'gas': 0.0,
+            'brake': 0.0,
+            'steering': 0.0,
+            'gear': '?',
+            'auto_mode': False,
+            'blinkers': (False, False) # Left, Right
+        }
+        
+        try:
+            if ctype == 'touch_drive' and len(axes) >= 3 and len(buttons) >= 7:
+                # Axes: [Steering, Gas, Brake]
+                semantic['steering'] = axes[0]
+                semantic['gas'] = axes[1]
+                semantic['brake'] = axes[2]
+                
+                # Buttons: [Left, Right, P, R, N, D, Auto]
+                semantic['blinkers'] = (bool(buttons[0]), bool(buttons[1]))
+                semantic['auto_mode'] = bool(buttons[6])
+                
+                if buttons[2]: semantic['gear'] = 'P'
+                elif buttons[3]: semantic['gear'] = 'R'
+                elif buttons[4]: semantic['gear'] = 'N'
+                elif buttons[5]: semantic['gear'] = 'D'
+                
+            elif ctype == 'ps4' and len(axes) >= 6:
+                # Axes: [LX, LY, RX, RY, L2, R2]
+                semantic['steering'] = axes[0]
+                # Map L2/R2 (-1.0 to 1.0) to 0.0 to 1.0
+                semantic['brake'] = (axes[4] + 1.0) / 2.0
+                semantic['gas'] = (axes[5] + 1.0) / 2.0
+                
+                # PS4 doesn't have explicit gear buttons mapped yet in this simple view
+                # You could map buttons if desired
+                
+        except Exception:
+            pass
+            
+        return semantic
+        
     def create_layout(self):
         """Create the dashboard layout"""
         layout = Layout()
@@ -45,22 +89,13 @@ class VehicleDashboard:
         layout.split_column(
             Layout(name="header", size=3),
             Layout(name="main"),
+            Layout(name="raw", size=10),
             Layout(name="footer", size=3)
         )
         
         layout["main"].split_row(
-            Layout(name="left"),
-            Layout(name="right")
-        )
-        
-        layout["left"].split_column(
-            Layout(name="controls", ratio=2),
-            Layout(name="status")
-        )
-        
-        layout["right"].split_column(
-            Layout(name="steering", ratio=2),
-            Layout(name="info")
+            Layout(name="controls"),
+            Layout(name="steering")
         )
         
         return layout
@@ -69,6 +104,7 @@ class VehicleDashboard:
         """Create header panel"""
         status_color = "green" if self.connected else "red"
         status_text = "● CONNECTED" if self.connected else "○ DISCONNECTED"
+        ctype = self.data.get('type', 'Unknown').upper()
         
         header = Table.grid(padding=1)
         header.add_column(style="bold white", justify="left")
@@ -77,162 +113,98 @@ class VehicleDashboard:
         
         header.add_row(
             f"[{status_color}]{status_text}[/{status_color}]",
-            "[bold cyan]VEHICLE CONTROL DASHBOARD[/bold cyan]",
+            f"[bold cyan]CONTROLLER: {ctype}[/bold cyan]",
             f"Port: {self.port}"
         )
         
         return Panel(header, box=box.ROUNDED, border_style="cyan")
     
     def create_controls_panel(self):
-        """Create controls display panel"""
+        """Create controls display panel based on semantic data"""
+        data = self.get_semantic_data()
+        
         table = Table.grid(padding=(0, 2))
         table.add_column(style="cyan", width=12)
         table.add_column(style="white")
         
         # Gas
-        gas_bar = self.create_bar(self.data['gas'], "green")
+        gas_bar = self.create_bar(data['gas'], "green")
         table.add_row("Gas:", gas_bar)
         
         # Brake
-        brake_bar = self.create_bar(self.data['brake'], "red")
+        brake_bar = self.create_bar(data['brake'], "red")
         table.add_row("Brake:", brake_bar)
         
         # Gear
-        gear_color = "yellow" if self.data['gear'] in ['D', 'R'] else "white"
-        table.add_row("Gear:", f"[{gear_color}]{self.data['gear']}[/{gear_color}]")
+        gear = data['gear']
+        gear_color = "yellow" if gear in ['D', 'R'] else "white"
+        table.add_row("Gear:", f"[{gear_color}]{gear}[/{gear_color}]")
         
         # Auto Mode
-        auto_color = "green" if self.data['autoMode'] else "dim white"
-        auto_text = "ON" if self.data['autoMode'] else "OFF"
+        auto_color = "green" if data['auto_mode'] else "dim white"
+        auto_text = "ON" if data['auto_mode'] else "OFF"
         table.add_row("Auto Mode:", f"[{auto_color}]{auto_text}[/{auto_color}]")
         
         # Blinkers
-        left_blink = "◄" if self.data['leftBlinker'] else " "
-        right_blink = "►" if self.data['rightBlinker'] else " "
-        blinker_text = f"[yellow]{left_blink}[/yellow] Blinkers [yellow]{right_blink}[/yellow]"
+        left, right = data['blinkers']
+        left_icon = "◄" if left else " "
+        right_icon = "►" if right else " "
+        blinker_text = f"[yellow]{left_icon}[/yellow] Blinkers [yellow]{right_icon}[/yellow]"
         table.add_row("", blinker_text)
         
-        return Panel(table, title="[bold]Controls[/bold]", border_style="blue", box=box.ROUNDED)
+        return Panel(table, title="[bold]Semantic Controls[/bold]", border_style="blue", box=box.ROUNDED)
     
     def create_steering_panel(self):
         """Create steering display panel"""
-        # Display raw steering value as received from app (no scaling)
-        steering_x = self.data['steering']['x']
+        data = self.get_semantic_data()
+        steering = data['steering']
         
-        # Create steering bar - map raw value to visual position
-        bar_width = 50
+        # Visual Bar
+        bar_width = 40
         center = bar_width // 2
-        
-        # Map raw steering value to bar position (no scaling, just visual mapping)
-        # Handle any value range - show raw data
-        # For visualization, allow wider range but show actual raw value
-        display_x = max(-2.0, min(2.0, steering_x))  # Clamp only for bar visualization
-        position = int(center + (display_x * center / 2.0))  # Scale for wider range in bar
-        position = max(0, min(bar_width - 1, position))
+        # Clamp -1 to 1
+        val = max(-1.0, min(1.0, steering))
+        pos = int(center + (val * center))
+        pos = max(0, min(bar_width - 1, pos))
         
         bar = ['─'] * bar_width
-        bar[center] = '│'  # Center marker
-        bar[position] = '●'  # Current position
-        
-        # Add range markers
+        bar[center] = '│'
+        bar[pos] = '●'
         bar_text = ''.join(bar)
         
-        # Color based on direction
-        if steering_x > 0.01:
-            bar_text = f"[green]{bar_text}[/green]"
-        elif steering_x < -0.01:
-            bar_text = f"[red]{bar_text}[/red]"
-        else:
-            bar_text = f"[white]{bar_text}[/white]"
+        if val > 0.05: bar_text = f"[green]{bar_text}[/green]"
+        elif val < -0.05: bar_text = f"[red]{bar_text}[/red]"
+        else: bar_text = f"[white]{bar_text}[/white]"
         
         table = Table.grid(padding=(0, 1))
         table.add_column(style="cyan", width=12)
         table.add_column()
         
-        # Show raw value exactly as received (no scaling)
-        # Also show if it's at the limits
-        value_text = f"[bold]{steering_x:+.6f}[/bold]"
-        if abs(steering_x) >= 0.999:
-            value_text += " [green](MAX)[/green]"
-        elif abs(steering_x) <= 0.001:
-            value_text += " [dim](CENTER)[/dim]"
-        table.add_row("Raw Value:", value_text)
         table.add_row("Steering:", bar_text)
+        table.add_row("Value:", f"{steering:+.4f}")
         
-        # Visual indicator using raw value
-        if abs(steering_x) > 0.001:
-            direction = "RIGHT" if steering_x > 0 else "LEFT"
-            direction_color = "green" if steering_x > 0 else "red"
-            table.add_row("Direction:", f"[{direction_color}]{direction}[/{direction_color}]")
-        else:
-            table.add_row("Direction:", "[dim]CENTER[/dim]")
+        return Panel(table, title="[bold]Steering[/bold]", border_style="magenta", box=box.ROUNDED)
+
+    def create_raw_panel(self):
+        """Create panel showing raw axes and buttons"""
+        axes = self.data.get('axes', [])
+        buttons = self.data.get('buttons', [])
         
-        # Show Y value if present (raw)
-        steering_y = self.data['steering'].get('y', 0.0)
-        if abs(steering_y) > 0.001:
-            table.add_row("Y Value:", f"{steering_y:+.6f}")
+        axes_str = " ".join([f"{x:+.2f}" for x in axes])
+        buttons_str = " ".join([str(b) for b in buttons])
         
-        return Panel(table, title="[bold]Steering (Raw Data)[/bold]", border_style="magenta", box=box.ROUNDED)
-    
-    def create_status_panel(self):
-        """Create status panel"""
-        table = Table.grid(padding=(0, 1))
-        table.add_column(style="cyan", width=14)
-        table.add_column(style="white")
+        content = f"[bold]Axes ({len(axes)}):[/bold]\n{axes_str}\n\n[bold]Buttons ({len(buttons)}):[/bold]\n{buttons_str}"
         
-        if self.last_update:
-            time_diff = time.time() - self.last_update
-            if time_diff < 1.0:
-                status = "[green]ACTIVE[/green]"
-            elif time_diff < 3.0:
-                status = "[yellow]SLOW[/yellow]"
-            else:
-                status = "[red]STALE[/red]"
-            
-            table.add_row("Update Status:", status)
-            table.add_row("Last Update:", f"{time_diff:.2f}s ago")
-        else:
-            table.add_row("Update Status:", "[dim]WAITING[/dim]")
-            table.add_row("Last Update:", "[dim]Never[/dim]")
-        
-        if self.data['timestamp']:
-            dt = datetime.fromtimestamp(self.data['timestamp'] / 1000)
-            table.add_row("Timestamp:", dt.strftime("%H:%M:%S.%f")[:-3])
-        
-        return Panel(table, title="[bold]Status[/bold]", border_style="yellow", box=box.ROUNDED)
-    
-    def create_info_panel(self):
-        """Create info panel"""
-        table = Table.grid(padding=(0, 1))
-        table.add_column(style="cyan", width=14)
-        table.add_column(style="white")
-        
-        if self.client_socket:
-            client_addr = self.client_socket.getpeername()
-            table.add_row("Client IP:", client_addr[0])
-            table.add_row("Client Port:", str(client_addr[1]))
-        else:
-            table.add_row("Client IP:", "[dim]None[/dim]")
-            table.add_row("Client Port:", "[dim]None[/dim]")
-        
-        table.add_row("Server Port:", str(self.port))
-        table.add_row("", "")
-        table.add_row("Press:", "[dim]Ctrl+C to exit[/dim]")
-        
-        return Panel(table, title="[bold]Connection Info[/bold]", border_style="green", box=box.ROUNDED)
+        return Panel(content, title="[bold]Raw Data[/bold]", border_style="white", box=box.ROUNDED)
     
     def create_bar(self, value, color):
         """Create a progress bar"""
-        bar_width = 30
-        # Ensure value is clamped to 0.0-1.0 for display
+        bar_width = 20
         clamped_value = max(0.0, min(1.0, value))
         filled = int(clamped_value * bar_width)
         bar = '█' * filled + '░' * (bar_width - filled)
-        # Show exact percentage with 2 decimal places for precision
-        percentage = f"{clamped_value * 100:.2f}%"
-        # Also show raw value for debugging
-        raw_value_text = f" (raw: {value:.6f})"
-        return f"[{color}]{bar}[/{color}] {percentage}{raw_value_text}"
+        percentage = f"{clamped_value * 100:.1f}%"
+        return f"[{color}]{bar}[/{color}] {percentage}"
     
     def create_footer(self):
         """Create footer panel"""
@@ -241,15 +213,19 @@ class VehicleDashboard:
         footer_text.append("TCP Server", style="cyan")
         footer_text.append(f" | {self.host}:{self.port}", style="dim white")
         
+        # Add latency/update info
+        if self.last_update:
+            diff = time.time() - self.last_update
+            footer_text.append(f" | Last Update: {diff:.3f}s ago", style="green" if diff < 1.0 else "red")
+            
         return Panel(footer_text, box=box.ROUNDED, border_style="dim")
     
     def update_dashboard(self, layout):
         """Update all dashboard panels"""
         layout["header"].update(self.create_header())
-        layout["left"]["controls"].update(self.create_controls_panel())
-        layout["left"]["status"].update(self.create_status_panel())
-        layout["right"]["steering"].update(self.create_steering_panel())
-        layout["right"]["info"].update(self.create_info_panel())
+        layout["main"]["controls"].update(self.create_controls_panel())
+        layout["main"]["steering"].update(self.create_steering_panel())
+        layout["raw"].update(self.create_raw_panel())
         layout["footer"].update(self.create_footer())
     
     def handle_client(self, client_socket, addr):
@@ -273,20 +249,19 @@ class VehicleDashboard:
                     if line.strip():
                         try:
                             parsed_data = json.loads(line)
-                            self.data.update(parsed_data)
-                            self.last_update = time.time()
-                        except json.JSONDecodeError as e:
-                            self.console.print(f"[red]JSON decode error: {e}[/red]")
+                            # Expecting keys: type, axes, buttons
+                            if 'type' in parsed_data:
+                                self.data = parsed_data
+                                self.last_update = time.time()
+                        except json.JSONDecodeError:
+                            pass
                             
-        except ConnectionResetError:
-            self.console.print(f"[yellow]Client {addr[0]}:{addr[1]} disconnected[/yellow]")
-        except Exception as e:
-            self.console.print(f"[red]Error handling client: {e}[/red]")
+        except Exception:
+            pass
         finally:
             self.connected = False
             self.client_socket = None
             client_socket.close()
-            self.console.print(f"[red]Connection closed[/red]")
     
     def start_server(self):
         """Start the TCP server"""
@@ -294,7 +269,7 @@ class VehicleDashboard:
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.socket.bind((self.host, self.port))
         self.socket.listen(1)
-        self.socket.settimeout(1.0)  # Non-blocking with timeout
+        self.socket.settimeout(1.0)
         
         self.console.print(f"[cyan]Server started on {self.host}:{self.port}[/cyan]")
         self.console.print("[yellow]Waiting for connection...[/yellow]")
@@ -304,7 +279,6 @@ class VehicleDashboard:
         with Live(layout, refresh_per_second=10, screen=True) as live:
             while self.running:
                 try:
-                    # Try to accept a connection
                     if not self.connected:
                         try:
                             client_socket, addr = self.socket.accept()
@@ -315,29 +289,24 @@ class VehicleDashboard:
                             )
                             client_thread.start()
                         except socket.timeout:
-                            pass  # No connection yet, continue
+                            pass
                     
-                    # Update dashboard
                     self.update_dashboard(layout)
-                    live.update(layout)
-                    
-                    time.sleep(0.1)  # Update rate
+                    time.sleep(0.1)
                     
                 except KeyboardInterrupt:
-                    self.console.print("\n[yellow]Shutting down...[/yellow]")
                     self.running = False
                     break
         
         if self.socket:
             self.socket.close()
-        self.console.print("[green]Server stopped[/green]")
 
 def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='Vehicle Control Dashboard')
-    parser.add_argument('--host', default='0.0.0.0', help='Host to bind to (default: 0.0.0.0)')
-    parser.add_argument('--port', type=int, default=8080, help='Port to listen on (default: 8080)')
+    parser.add_argument('--host', default='0.0.0.0', help='Host to bind to')
+    parser.add_argument('--port', type=int, default=5000, help='Port to listen on')
     
     args = parser.parse_args()
     
@@ -346,3 +315,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
