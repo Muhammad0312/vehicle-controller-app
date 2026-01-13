@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/interfaces/base_controller.dart';
 import '../../core/models/controller_state.dart';
 import '../../common/widgets/joystick_widget.dart';
 import '../../common/widgets/gas_brake_widget.dart';
+import '../../core/providers/settings_provider.dart';
 
 class TouchDriveController implements BaseController {
   @override
@@ -23,16 +25,16 @@ class TouchDriveController implements BaseController {
   }
 }
 
-class _TouchDriveUI extends StatefulWidget {
+class _TouchDriveUI extends ConsumerStatefulWidget {
   final Function(ControllerState) onStateChanged;
 
   const _TouchDriveUI({required this.onStateChanged});
 
   @override
-  State<_TouchDriveUI> createState() => _TouchDriveUIState();
+  ConsumerState<_TouchDriveUI> createState() => _TouchDriveUIState();
 }
 
-class _TouchDriveUIState extends State<_TouchDriveUI> {
+class _TouchDriveUIState extends ConsumerState<_TouchDriveUI> {
   // State
   double _steering = 0.0;
   double _gas = 0.0;
@@ -70,6 +72,28 @@ class _TouchDriveUIState extends State<_TouchDriveUI> {
     );
   }
 
+  void _onJoystickChanged(double x, double y) {
+    final settings = ref.read(settingsProvider);
+    double val = x;
+    // Apply Deadzone
+    if (val.abs() < settings.deadzone) {
+      val = 0.0;
+    } else {
+      // Normalize
+      // sign(val) * (abs(val) - deadzone) / (1 - deadzone)
+      val =
+          val.sign *
+          (val.abs() - settings.deadzone) /
+          (1.0 - settings.deadzone);
+    }
+
+    // Apply Sensitivity
+    val = val * settings.steeringSensitivity;
+
+    _steering = val.clamp(-1.0, 1.0);
+    _updateState();
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -102,11 +126,7 @@ class _TouchDriveUIState extends State<_TouchDriveUI> {
                         200.0,
                       );
                       return JoystickWidget(
-                        onChanged: (x, y) {
-                          // Clamp to -1.0 to 1.0 range
-                          _steering = x.clamp(-1.0, 1.0);
-                          _updateState();
-                        },
+                        onChanged: (x, y) => _onJoystickChanged(x, y),
                         size: joystickSize,
                         mode: JoystickMode.horizontal,
                       );

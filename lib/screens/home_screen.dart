@@ -1,79 +1,65 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import '../services/tcp_client.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/providers.dart';
+import '../core/providers/settings_provider.dart';
 import 'settings_screen.dart';
 import '../core/services/controller_registry.dart';
+import '../core/di/service_locator.dart';
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  late TCPClient _tcpClient;
-  String _connectionStatus = 'Disconnected';
-  String _currentControllerId = 'touch_drive';
-
+class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _tcpClient = TCPClient();
-    _tcpClient.onConnectionStatusChanged = (status) {
-      if (mounted) {
-        setState(() {
-          _connectionStatus = status;
-        });
-      }
-    };
-    _tcpClient.onError = (error) {
-      if (mounted && !error.toLowerCase().contains('connection')) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error), backgroundColor: Colors.red),
-        );
-      }
-    };
-
-    _loadSettings();
+    _initConnection();
   }
 
-  Future<void> _loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    final ip = prefs.getString('tcp_ip') ?? '192.168.1.100';
-    final port = prefs.getInt('tcp_port') ?? 8080;
-    final controllerId = prefs.getString('controller_id') ?? 'touch_drive';
-
-    if (mounted) {
-      setState(() {
-        _currentControllerId = controllerId;
-      });
-      _tcpClient.updateIP(ip);
-      _tcpClient.updatePort(port);
-      _tcpClient.connect();
-    }
-  }
-
-  void _onSettingsChanged(String ip, int port, String controllerId) {
-    setState(() {
-      _currentControllerId = controllerId;
-    });
-    _tcpClient.updateIP(ip);
-    _tcpClient.updatePort(port);
-    _tcpClient.connect();
-  }
-
-  @override
-  void dispose() {
-    _tcpClient.dispose();
-    super.dispose();
+  Future<void> _initConnection() async {
+    // Initial connection based on current provider state (or persisted if provider isn't ready,
+    // but provider loads initially too).
+    // Actually, TCPClient could be managed by a Notifier reacting to settings changes,
+    // but for now we just ensure we connect on app start.
+    final settings = ref.read(settingsProvider); // Read once
+    final tcpClient = ref.read(tcpClientProvider);
+    tcpClient.updateIP(settings.ip);
+    tcpClient.updatePort(settings.port);
+    tcpClient.connect();
   }
 
   @override
   Widget build(BuildContext context) {
+    final settings = ref.watch(settingsProvider);
+
+    final controllerRegistry = getIt<ControllerRegistry>();
     final controller =
-        ControllerRegistry().getController(_currentControllerId) ??
-        ControllerRegistry().getController('touch_drive')!;
+        controllerRegistry.getController(settings.controllerId) ??
+        controllerRegistry.getController('touch_drive')!;
+
+    // Watch connection status using Riverpod
+    final connectionStatusAsync = ref.watch(connectionStatusProvider);
+    final connectionStatus =
+        connectionStatusAsync.valueOrNull ?? 'Disconnected';
+
+    // Show error snackbar if error occurs (optional listener)
+    ref.listen(connectionStatusProvider, (previous, next) {
+      if (next.hasError) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Connection Error: ${next.error}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    });
+
+    // Get TCP Client to access updateState
+    final tcpClient = ref.read(tcpClientProvider);
 
     return Scaffold(
       body: Container(
@@ -82,11 +68,15 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             // Controller UI
             controller.buildUI(context, (state) {
-              _tcpClient.updateState(state);
+              tcpClient.updateState(state);
             }),
 
             // Overlay UI (Connection Status & Settings)
-            Positioned(top: 16, left: 16, child: _buildConnectionStatus()),
+            Positioned(
+              top: 16,
+              left: 16,
+              child: _buildConnectionStatus(connectionStatus),
+            ),
 
             Positioned(top: 16, right: 16, child: _buildSettingsButton()),
           ],
@@ -95,18 +85,18 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildConnectionStatus() {
+  Widget _buildConnectionStatus(String status) {
     Color statusColor;
-    if (_connectionStatus == 'Connected') {
+    if (status == 'Connected') {
       statusColor = const Color(0xFF00D4AA);
-    } else if (_connectionStatus.contains('Connecting')) {
+    } else if (status.contains('Connecting')) {
       statusColor = const Color(0xFFFFB84D);
     } else {
       statusColor = const Color(0xFFFF6B6B);
     }
 
     return Tooltip(
-      message: _connectionStatus,
+      message: status,
       child: Container(
         width: 12,
         height: 12,
@@ -134,12 +124,7 @@ class _HomeScreenState extends State<HomeScreen> {
           context,
           PageRouteBuilder(
             pageBuilder: (context, animation, secondaryAnimation) =>
-                SettingsScreen(
-                  currentIP: _tcpClient.ip,
-                  currentPort: _tcpClient.port,
-                  currentControllerId: _currentControllerId,
-                  onSettingsChanged: _onSettingsChanged,
-                ),
+                const SettingsScreen(),
             transitionsBuilder:
                 (context, animation, secondaryAnimation, child) {
                   const curve = Curves.easeOutQuint;

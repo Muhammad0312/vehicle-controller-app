@@ -13,12 +13,15 @@ class TCPClient {
   String _ip = '192.168.1.100';
   int _port = 8080;
 
-  Function(String)? onConnectionStatusChanged;
-  Function(String)? onError;
+  final _statusController = StreamController<String>.broadcast();
+  Stream<String> get statusStream => _statusController.stream;
 
   String get ip => _ip;
   int get port => _port;
   bool get isConnected => _isConnected;
+
+  // Current status getter
+  String get currentStatus => _isConnected ? 'Connected' : 'Disconnected';
 
   void updateIP(String ip) {
     _ip = ip;
@@ -39,13 +42,14 @@ class TCPClient {
 
   Future<void> _attemptConnection() async {
     try {
+      _statusController.add('Connecting...');
       _socket = await Socket.connect(
         _ip,
         _port,
         timeout: const Duration(seconds: 5),
       );
       _isConnected = true;
-      onConnectionStatusChanged?.call('Connected');
+      _statusController.add('Connected');
 
       // Start sending data at constant rate (50 Hz = 20ms interval)
       _sendTimer?.cancel();
@@ -68,7 +72,7 @@ class TCPClient {
       _reconnectTimer?.cancel();
     } catch (e) {
       _isConnected = false;
-      onConnectionStatusChanged?.call('Connecting...');
+      // _statusController.add('Connecting...'); // Already added above
 
       // Retry connection after 2 seconds
       if (_shouldReconnect) {
@@ -98,7 +102,7 @@ class TCPClient {
       final bytes = utf8.encode('$jsonString\n');
       _socket!.add(bytes);
     } catch (e) {
-      onError?.call('Send error: $e');
+      _statusController.add('Send error: $e');
       _handleDisconnection();
     }
   }
@@ -108,7 +112,7 @@ class TCPClient {
     _socket?.destroy();
     _socket = null;
     _sendTimer?.cancel();
-    onConnectionStatusChanged?.call('Disconnected');
+    _statusController.add('Disconnected');
 
     // Attempt to reconnect
     if (_shouldReconnect) {
@@ -128,7 +132,7 @@ class TCPClient {
     _socket?.destroy();
     _socket = null;
     _isConnected = false;
-    onConnectionStatusChanged?.call('Disconnected');
+    _statusController.add('Disconnected');
   }
 
   void disconnect() {
@@ -142,5 +146,6 @@ class TCPClient {
     _socket?.destroy();
     _socket = null;
     _isConnected = false;
+    _statusController.close();
   }
 }

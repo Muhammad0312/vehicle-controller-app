@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/interfaces/base_controller.dart';
 import '../../core/models/controller_state.dart';
 import '../../common/widgets/joystick_widget.dart';
+import '../../core/providers/settings_provider.dart';
 
 class PS5Controller implements BaseController {
   @override
@@ -22,16 +24,16 @@ class PS5Controller implements BaseController {
   }
 }
 
-class _PS5ControllerUI extends StatefulWidget {
+class _PS5ControllerUI extends ConsumerStatefulWidget {
   final Function(ControllerState) onStateChanged;
 
   const _PS5ControllerUI({required this.onStateChanged});
 
   @override
-  State<_PS5ControllerUI> createState() => _PS5ControllerUIState();
+  ConsumerState<_PS5ControllerUI> createState() => _PS5ControllerUIState();
 }
 
-class _PS5ControllerUIState extends State<_PS5ControllerUI> {
+class _PS5ControllerUIState extends ConsumerState<_PS5ControllerUI> {
   // State
   double _leftStickX = 0.0;
   double _leftStickY = 0.0;
@@ -56,6 +58,25 @@ class _PS5ControllerUIState extends State<_PS5ControllerUI> {
     widget.onStateChanged(
       ControllerState(type: 'ps5', axes: axes, buttons: buttons),
     );
+  }
+
+  double _processAxis(double val) {
+    final settings = ref.read(settingsProvider);
+    double newValue = val;
+
+    // Deadzone
+    if (newValue.abs() < settings.deadzone) {
+      newValue = 0.0;
+    } else {
+      newValue =
+          newValue.sign *
+          ((newValue.abs() - settings.deadzone) / (1.0 - settings.deadzone));
+    }
+
+    // Sensitivity
+    newValue = newValue * settings.steeringSensitivity;
+
+    return newValue.clamp(-1.0, 1.0);
   }
 
   void _setButton(int index, bool pressed) {
@@ -124,8 +145,8 @@ class _PS5ControllerUIState extends State<_PS5ControllerUI> {
                   size: joystickSize,
                   mode: JoystickMode.all,
                   onChanged: (x, y) {
-                    _leftStickX = x;
-                    _leftStickY = y;
+                    _leftStickX = _processAxis(x);
+                    _leftStickY = _processAxis(y);
                     _updateState();
                   },
                 ),
@@ -137,8 +158,8 @@ class _PS5ControllerUIState extends State<_PS5ControllerUI> {
                   size: joystickSize,
                   mode: JoystickMode.all,
                   onChanged: (x, y) {
-                    _rightStickX = x;
-                    _rightStickY = y;
+                    _rightStickX = _processAxis(x);
+                    _rightStickY = _processAxis(y);
                     _updateState();
                   },
                 ),
