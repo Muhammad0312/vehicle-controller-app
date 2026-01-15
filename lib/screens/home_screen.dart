@@ -21,11 +21,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _initConnection() async {
-    // Initial connection based on current provider state (or persisted if provider isn't ready,
-    // but provider loads initially too).
-    // Actually, TCPClient could be managed by a Notifier reacting to settings changes,
-    // but for now we just ensure we connect on app start.
-    final settings = ref.read(settingsProvider); // Read once
+    // Wait for settings to load from storage
+    await ref.read(settingsProvider.notifier).ensureLoaded();
+
+    final settings = ref.read(settingsProvider);
     final tcpClient = ref.read(tcpClientProvider);
     tcpClient.updateIP(settings.ip);
     tcpClient.updatePort(settings.port);
@@ -39,7 +38,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final controllerRegistry = getIt<ControllerRegistry>();
     final controller =
         controllerRegistry.getController(settings.controllerId) ??
-        controllerRegistry.getController('touch_drive')!;
+        controllerRegistry.getController('touch_drive') ??
+        controllerRegistry.getAllControllers().firstOrNull;
+
+    // Safety check: if no controllers are registered, show error
+    if (controller == null) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(
+          child: Text(
+            'Error: No controllers registered',
+            style: TextStyle(color: Colors.red, fontSize: 18),
+          ),
+        ),
+      );
+    }
 
     // Watch connection status using Riverpod
     final connectionStatusAsync = ref.watch(connectionStatusProvider);

@@ -3,8 +3,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_settings.dart';
 
 class SettingsNotifier extends StateNotifier<AppSettings> {
+  bool _isLoaded = false;
+  Future<void>? _loadingFuture;
+
   SettingsNotifier() : super(const AppSettings()) {
-    _loadSettings();
+    _loadingFuture = _loadSettings();
+  }
+
+  /// Wait for settings to be loaded from storage
+  Future<void> ensureLoaded() async {
+    if (_isLoaded) return;
+    await _loadingFuture;
   }
 
   Future<void> _loadSettings() async {
@@ -16,6 +25,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       steeringSensitivity: prefs.getDouble('sensitivity') ?? 1.0,
       deadzone: prefs.getDouble('deadzone') ?? 0.05,
     );
+    _isLoaded = true;
   }
 
   Future<void> updateSettings({
@@ -26,13 +36,21 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     double? deadzone,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    if (ip != null) await prefs.setString('tcp_ip', ip);
-    if (port != null) await prefs.setInt('tcp_port', port);
-    if (controllerId != null)
+    if (ip != null) {
+      await prefs.setString('tcp_ip', ip);
+    }
+    if (port != null) {
+      await prefs.setInt('tcp_port', port);
+    }
+    if (controllerId != null) {
       await prefs.setString('controller_id', controllerId);
-    if (steeringSensitivity != null)
+    }
+    if (steeringSensitivity != null) {
       await prefs.setDouble('sensitivity', steeringSensitivity);
-    if (deadzone != null) await prefs.setDouble('deadzone', deadzone);
+    }
+    if (deadzone != null) {
+      await prefs.setDouble('deadzone', deadzone);
+    }
 
     state = state.copyWith(
       ip: ip,

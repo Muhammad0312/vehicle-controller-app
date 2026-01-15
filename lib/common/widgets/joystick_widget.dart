@@ -102,7 +102,6 @@ class _JoystickWidgetState extends State<JoystickWidget>
     _centerController.forward().then((_) {
       setState(() {
         _dragPosition = Offset.zero;
-        _dragPosition = Offset.zero;
         _x = 0.0;
         _y = 0.0;
       });
