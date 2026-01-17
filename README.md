@@ -3,6 +3,14 @@
 A professional, modular Flutter application for remote vehicle control via TCP. Designed for robotics and autonomous vehicle projects, it features a scalable plugin-based architecture, allowing developers to easily add custom controller layouts.
 
 ## Features
+[![Download Latest](https://img.shields.io/github/v/release/yourusername/vehicle_controller_app?label=Download%20APK&style=for-the-badge&logo=android)](https://github.com/yourusername/vehicle_controller_app/releases/latest)
+
+### 📥 Download & Install
+1. Click the **Download** button above.
+2. Download the `app-release.apk` file from the latest release.
+3. Open the file on your Android device and confirm installation.
+
+### 🎮 Multiple Controller Layouts
 
 ### 🎮 Multiple Controller Layouts
 - **TouchDrive (Default)**:
