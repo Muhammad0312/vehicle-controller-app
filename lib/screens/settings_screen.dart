@@ -49,9 +49,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       return;
     }
 
-    if (ip.split('.').length != 4) {
+    final ipSegments = ip.split('.');
+    if (ipSegments.length != 4) {
       _showError('IP Address must have 4 segments (e.g. 192.168.1.100)');
       return;
+    }
+
+    for (final segment in ipSegments) {
+      final val = int.tryParse(segment);
+      if (val == null || val < 0 || val > 255) {
+        _showError('IP segments must be between 0 and 255');
+        return;
+      }
     }
 
     if (port == null || port < 1 || port > 65535) {
