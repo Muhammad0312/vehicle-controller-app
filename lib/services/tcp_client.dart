@@ -47,11 +47,21 @@ class TCPClient {
   Future<void> _attemptConnection() async {
     try {
       _safeAddStatus('Connecting...');
-      _socket = await Socket.connect(
+      // Ensure any previous socket is cleaned up
+      if (_socket != null) {
+        try {
+          _socket!.destroy();
+        } catch (_) {}
+        _socket = null;
+      }
+
+      final socketFuture = Socket.connect(
         _ip,
         _port,
         timeout: const Duration(seconds: 5),
       );
+
+      _socket = await socketFuture;
       _isConnected = true;
       _reconnectAttempts = 0; // Reset counter on successful connection
       _safeAddStatus('Connected');
@@ -68,21 +78,25 @@ class TCPClient {
           .listen(
             null,
             onError: (error) {
+              _safeAddStatus('Socket error: $error');
               _handleDisconnection();
             },
             onDone: () {
+              _safeAddStatus('Socket closed by server');
               _handleDisconnection();
             },
             cancelOnError: false, // Continue listening even after errors
           )
           .onError((error, stackTrace) {
             // Catch any unhandled errors from the stream
+            _safeAddStatus('Stream error: $error');
             _handleDisconnection();
           });
 
       _reconnectTimer?.cancel();
     } catch (e) {
       _isConnected = false;
+      _socket = null; // Ensure null on failure
       _reconnectAttempts++;
 
       // Calculate exponential backoff delay, capped at max
@@ -127,31 +141,33 @@ class TCPClient {
 
     try {
       final jsonString = jsonEncode(_currentState!.toJson());
-
       // Optimized: Pre-encode newline and combine in single add call
       final bytes = utf8.encode('$jsonString\n');
       _socket?.add(bytes);
     } on SocketException catch (e) {
-      // Socket closed or network error - handle gracefully
-      _isConnected = false;
       _safeAddStatus('Connection lost: ${e.message}');
       _handleDisconnection();
+    } on StateError catch (e) {
+      // Socket might be closed/destroyed but not yet null
+      _safeAddStatus('Socket state error: $e');
+      _handleDisconnection();
     } catch (e) {
-      // Any other error during send
-      _isConnected = false;
       _safeAddStatus('Send error: $e');
       _handleDisconnection();
     }
   }
 
   void _handleDisconnection() {
+    // Prevent recursive or multiple calls
+    if (!_isConnected && _socket == null) return;
+
     _isConnected = false;
     try {
       _socket?.destroy();
     } catch (e) {
       // Ignore errors during socket destruction
     }
-    _socket = null;
+    _socket = null; // Ensure socket is null immediately
     _sendTimer?.cancel();
     _safeAddStatus('Disconnected');
 
