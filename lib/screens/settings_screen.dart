@@ -3,7 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/services/controller_registry.dart';
 import '../core/di/service_locator.dart';
 import '../core/providers.dart';
+
 import '../core/providers/settings_provider.dart';
+import '../core/utils/ip_input_formatter.dart';
+import 'package:flutter/services.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -43,6 +46,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     if (ip.isEmpty) {
       _showError('Please enter a valid IP address');
+      return;
+    }
+
+    if (ip.split('.').length != 4) {
+      _showError('IP Address must have 4 segments (e.g. 192.168.1.100)');
       return;
     }
 
@@ -136,6 +144,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       label: 'TARGET IP ADDRESS',
                       hint: '192.168.1.100',
                       icon: Icons.wifi,
+                      inputFormatters: [IpAddressInputFormatter()],
                     ),
                     SizedBox(height: 16),
                     _buildTechnicalTextField(
@@ -273,6 +282,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     required String hint,
     required IconData icon,
     bool isNumber = false,
+    List<TextInputFormatter>? inputFormatters,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -294,7 +304,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           child: TextField(
             controller: controller,
-            keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+            keyboardType: isNumber
+                ? TextInputType.number
+                : const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: inputFormatters,
             style: TextStyle(
               color: Colors.white,
               fontFamily: 'monospace',
