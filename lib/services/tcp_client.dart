@@ -5,13 +5,10 @@ import '../core/models/controller_state.dart';
 
 class TCPClient {
   Socket? _socket;
-  Timer? _reconnectTimer;
   Timer? _sendTimer;
+  Timer? _reconnectTimer;
   bool _isConnected = false;
-  bool _shouldReconnect = true;
-  int _reconnectAttempts = 0;
-  static const int _baseReconnectDelay = 2; // seconds
-  static const int _maxReconnectDelay = 30; // cap at 30 seconds
+  bool _isReconnecting = false;
 
   String _ip = '192.168.1.100';
   int _port = 8080;
@@ -23,37 +20,39 @@ class TCPClient {
   int get port => _port;
   bool get isConnected => _isConnected;
 
-  // Current status getter
   String get currentStatus => _isConnected ? 'Connected' : 'Disconnected';
 
   void updateIP(String ip) {
     _ip = ip;
-    _disconnect();
+    _restartConnection();
   }
 
   void updatePort(int port) {
     _port = port;
-    _disconnect();
+    _restartConnection();
+  }
+
+  void _restartConnection() {
+    // If we are active (connected or trying to), restart the process with new settings
+    // If we are fully stopped, do nothing (user must call connect())
+    if (_isConnected || _isReconnecting) {
+      _socket
+          ?.destroy(); // Will trigger _handleDisconnection -> _scheduleReconnect
+    }
   }
 
   Future<void> connect() async {
     if (_isConnected) return;
-
-    _shouldReconnect = true;
-    _reconnectAttempts = 0; // Reset attempts on manual connect
+    _stopReconnect();
     await _attemptConnection();
   }
 
   Future<void> _attemptConnection() async {
     try {
-      _safeAddStatus('Connecting...');
-      // Ensure any previous socket is cleaned up
-      if (_socket != null) {
-        try {
-          _socket!.destroy();
-        } catch (_) {}
-        _socket = null;
-      }
+      _safeAddStatus('Connecting to $_ip:$_port...');
+
+      _socket?.destroy();
+      _socket = null;
 
       final socketFuture = Socket.connect(
         _ip,
@@ -63,60 +62,31 @@ class TCPClient {
 
       _socket = await socketFuture;
       _isConnected = true;
-      _reconnectAttempts = 0; // Reset counter on successful connection
+      _isReconnecting = false;
       _safeAddStatus('Connected');
 
-      // Start sending data at constant rate (50 Hz = 20ms interval)
       _sendTimer?.cancel();
       _sendTimer = Timer.periodic(
         const Duration(milliseconds: 20),
         (_) => _sendData(),
       );
 
-      // Listen for disconnections
-      _socket!
-          .listen(
-            null,
-            onError: (error) {
-              _safeAddStatus('Socket error: $error');
-              _handleDisconnection();
-            },
-            onDone: () {
-              _safeAddStatus('Socket closed by server');
-              _handleDisconnection();
-            },
-            cancelOnError: false, // Continue listening even after errors
-          )
-          .onError((error, stackTrace) {
-            // Catch any unhandled errors from the stream
-            _safeAddStatus('Stream error: $error');
-            _handleDisconnection();
-          });
-
-      _reconnectTimer?.cancel();
+      _socket!.listen(
+        (data) {},
+        onError: (error) {
+          _safeAddStatus('Socket error: $error');
+          _handleDisconnection();
+        },
+        onDone: () {
+          _safeAddStatus('Socket closed by server');
+          _handleDisconnection();
+        },
+        cancelOnError: false,
+      );
     } catch (e) {
       _isConnected = false;
-      _socket = null; // Ensure null on failure
-      _reconnectAttempts++;
-
-      // Calculate exponential backoff delay, capped at max
-      final exponentialDelay =
-          _baseReconnectDelay * (1 << (_reconnectAttempts - 1).clamp(0, 5));
-      final delay = exponentialDelay.clamp(
-        _baseReconnectDelay,
-        _maxReconnectDelay,
-      );
-      _safeAddStatus('Reconnecting in ${delay}s (attempt $_reconnectAttempts)');
-
-      // Retry connection with exponential backoff (infinite retries)
-      if (_shouldReconnect) {
-        _reconnectTimer?.cancel();
-        _reconnectTimer = Timer(Duration(seconds: delay), () {
-          if (_shouldReconnect && !_isConnected) {
-            _attemptConnection();
-          }
-        });
-      }
+      _safeAddStatus('Connection failed: $e');
+      _scheduleReconnect();
     }
   }
 
@@ -127,97 +97,78 @@ class TCPClient {
   }
 
   void _safeAddStatus(String status) {
-    try {
-      if (!_statusController.isClosed) {
-        _statusController.add(status);
-      }
-    } catch (e) {
-      // Ignore errors when adding to closed stream
+    if (!_statusController.isClosed) {
+      _statusController.add(status);
     }
   }
 
-  void _sendData() {
-    if (!_isConnected || _socket == null || _currentState == null) return;
+  bool _isSendingData = false;
 
+  Future<void> _sendData() async {
+    if (!_isConnected ||
+        _socket == null ||
+        _currentState == null ||
+        _isSendingData)
+      return;
+
+    _isSendingData = true;
     try {
       final jsonString = jsonEncode(_currentState!.toJson());
-      // Optimized: Pre-encode newline and combine in single add call
-      final bytes = utf8.encode('$jsonString\n');
-      _socket?.add(bytes);
-    } on SocketException catch (e) {
-      _safeAddStatus('Connection lost: ${e.message}');
-      _handleDisconnection();
-    } on StateError catch (e) {
-      // Socket might be closed/destroyed but not yet null
-      _safeAddStatus('Socket state error: $e');
-      _handleDisconnection();
+      _socket?.write('$jsonString\n');
+      await _socket?.flush();
     } catch (e) {
-      _safeAddStatus('Send error: $e');
       _handleDisconnection();
+    } finally {
+      _isSendingData = false;
     }
   }
 
   void _handleDisconnection() {
-    // Prevent recursive or multiple calls
     if (!_isConnected && _socket == null) return;
 
     _isConnected = false;
+    _sendTimer?.cancel();
     try {
       _socket?.destroy();
-    } catch (e) {
-      // Ignore errors during socket destruction
-    }
-    _socket = null; // Ensure socket is null immediately
-    _sendTimer?.cancel();
+    } catch (_) {}
+    _socket = null;
+
     _safeAddStatus('Disconnected');
-
-    // Attempt to reconnect with exponential backoff (infinite retries)
-    if (_shouldReconnect) {
-      _reconnectAttempts++;
-
-      // Calculate exponential backoff delay, capped at max
-      final exponentialDelay =
-          _baseReconnectDelay * (1 << (_reconnectAttempts - 1).clamp(0, 5));
-      final delay = exponentialDelay.clamp(
-        _baseReconnectDelay,
-        _maxReconnectDelay,
-      );
-
-      _reconnectTimer?.cancel();
-      _reconnectTimer = Timer(Duration(seconds: delay), () {
-        if (_shouldReconnect && !_isConnected) {
-          _attemptConnection();
-        }
-      });
-    }
+    _scheduleReconnect();
   }
 
-  void _disconnect() {
-    _shouldReconnect = false;
-    _reconnectAttempts = 0; // Reset for next connection attempt
+  void _scheduleReconnect() {
+    if (_isReconnecting) return;
+    _isReconnecting = true;
+
     _reconnectTimer?.cancel();
-    _sendTimer?.cancel();
-    try {
-      _socket?.destroy();
-    } catch (e) {
-      // Ignore errors during socket destruction
-    }
-    _socket = null;
-    _isConnected = false;
-    _safeAddStatus('Disconnected');
+    _reconnectTimer = Timer(const Duration(seconds: 2), () async {
+      // Check if we were stopped during the wait
+      if (_isReconnecting) {
+        // Reset flag so that if _attemptConnection fails and calls _scheduleReconnect,
+        // it won't be blocked by the check at the top of this function.
+        _isReconnecting = false;
+        await _attemptConnection();
+      }
+    });
+  }
+
+  void _stopReconnect() {
+    _isReconnecting = false;
+    _reconnectTimer?.cancel();
   }
 
   void disconnect() {
-    _disconnect();
-  }
-
-  void dispose() {
-    _shouldReconnect = false;
-    _reconnectTimer?.cancel();
+    _stopReconnect();
     _sendTimer?.cancel();
     _socket?.destroy();
     _socket = null;
     _isConnected = false;
+    _safeAddStatus('Disconnected');
+  }
+
+  void dispose() {
+    disconnect();
     _statusController.close();
   }
 }

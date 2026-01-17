@@ -276,7 +276,7 @@ class VehicleDashboard:
         
         layout = self.create_layout()
         
-        with Live(layout, refresh_per_second=10, screen=True) as live:
+        with Live(layout, refresh_per_second=60, screen=True) as live:
             while self.running:
                 try:
                     if not self.connected:
@@ -292,7 +292,7 @@ class VehicleDashboard:
                             pass
                     
                     self.update_dashboard(layout)
-                    time.sleep(0.1)
+                    time.sleep(0.01)
                     
                 except KeyboardInterrupt:
                     self.running = False

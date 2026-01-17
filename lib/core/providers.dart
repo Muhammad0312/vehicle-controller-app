@@ -7,8 +7,11 @@ final tcpClientProvider = Provider<TCPClient>((ref) {
   return getIt<TCPClient>();
 });
 
-// Expose status stream
-final connectionStatusProvider = StreamProvider<String>((ref) {
+// Expose status stream with immediate current value
+final connectionStatusProvider = StreamProvider<String>((ref) async* {
   final client = ref.watch(tcpClientProvider);
-  return client.statusStream;
+  // Yield current status immediately so UI is not waiting
+  yield client.currentStatus;
+  // Then yield all stream events
+  yield* client.statusStream;
 });
