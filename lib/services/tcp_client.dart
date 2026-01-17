@@ -108,8 +108,9 @@ class TCPClient {
     if (!_isConnected ||
         _socket == null ||
         _currentState == null ||
-        _isSendingData)
+        _isSendingData) {
       return;
+    }
 
     _isSendingData = true;
     try {
@@ -124,7 +125,9 @@ class TCPClient {
   }
 
   void _handleDisconnection() {
-    if (!_isConnected && _socket == null) return;
+    if (!_isConnected && _socket == null) {
+      return;
+    }
 
     _isConnected = false;
     _sendTimer?.cancel();

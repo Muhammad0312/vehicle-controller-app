@@ -145,7 +145,7 @@ class IpAddressInputFormatter extends TextInputFormatter {
       if (split.last.length == 3 && !text.endsWith('.')) {
         // Check if we are editing the end
         if (newValue.selection.end == text.length) {
-          text = split.join('.') + '.';
+          text = '${split.join('.')}.';
           // reconstruct split to be safe
           split = text.split('.');
         }
@@ -158,7 +158,7 @@ class IpAddressInputFormatter extends TextInputFormatter {
       // we should try to preserve it if valid
       if (newValue.text.endsWith('.') && !text.endsWith('.')) {
         if (split.length < 4) {
-          text = text + '.';
+          text = '$text.';
         }
       }
     }
