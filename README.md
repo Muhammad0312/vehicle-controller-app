@@ -3,7 +3,7 @@
 A professional, modular Flutter application for remote vehicle control via TCP. Designed for robotics and autonomous vehicle projects, it features a scalable plugin-based architecture, allowing developers to easily add custom controller layouts.
 
 ## Features
-[![Download Latest](https://img.shields.io/github/v/release/yourusername/vehicle_controller_app?label=Download%20APK&style=for-the-badge&logo=android)](https://github.com/yourusername/vehicle_controller_app/releases/latest)
+[![Download Latest](https://img.shields.io/github/v/release/Muhammad0312/vehicle-controller-app?label=Download%20APK&style=for-the-badge&logo=android)](https://github.com/Muhammad0312/vehicle-controller-app/releases/latest)
 
 ### 📥 Download & Install
 1. Click the **Download** button above.
@@ -140,7 +140,7 @@ void main() {
 ### Steps
 1. **Clone the repo**:
    ```bash
-   git clone https://github.com/yourusername/vehicle_controller_app.git
+   git clone https://github.com/Muhammad0312/vehicle-controller-app.git
    ```
 2. **Install dependencies**:
    ```bash
